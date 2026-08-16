@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务器监控（永久页）</title>
+<style>
+  :root {
+    --bg: #0b0f1a; --card: #141a2a; --card2: #1a2236; --border: #25304a;
+    --text: #e6ecf5; --muted: #8b97ad; --green: #22c55e; --yellow: #eab308;
+    --orange: #f97316; --red: #ef4444; --blue: #3b82f6; --cyan: #06b6d4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 16px; min-height: 100vh; }
+  .header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  .dot.crit { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .badge.ok { background: rgba(34,197,94,.15); color: var(--green); }
+  .badge.warn { background: rgba(234,179,8,.15); color: var(--yellow); }
+  .badge.crit { background: rgba(239,68,68,.15); color: var(--red); }
+  .meta { margin-left: auto; text-align: right; font-size: 12px; color: var(--muted); }
+  .meta b { color: var(--text); }
+  #alertBanner { display: none; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-weight: 600; font-size: 14px; }
+  #alertBanner.warn { display: block; background: rgba(234,179,8,.12); color: var(--yellow); border: 1px solid rgba(234,179,8,.4); }
+  #alertBanner.crit { display: block; background: rgba(239,68,68,.14); color: var(--red); border: 1px solid rgba(239,68,68,.5); animation: pulse 1s infinite; }
+  .grid { display: grid; gap: 14px; }
+  .gpu-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card h3 { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+  .gpu-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .gpu-sub { font-size: 12px; color: var(--muted); margin-bottom: 12px; word-break: break-all; }
+  .occ-badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+  .occ-badge.idle { background: rgba(34,197,94,.15); color: var(--green); }
+  .occ-badge.busy { background: rgba(6,182,212,.15); color: var(--cyan); }
+  .bigrow { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+  .temp { font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .temp.unit { font-size: 14px; color: var(--muted); }
+  .util { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .metric { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .metric .label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .metric .label b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; background: var(--card2); border-radius: 6px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 6px; transition: width .6s ease; background: var(--blue); }
+  .statline { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+  .statline b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .sys-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .proc-item { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 4px 0; }
+  .proc-item .pn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .proc-item .pid { color: var(--muted); font-family: monospace; }
+  .proc-item .pm { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ptag { display: inline-block; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .ptag.compute { background: rgba(59,130,246,.18); color: #7db3ff; }
+  .ptag.display { background: rgba(139,151,173,.18); color: var(--muted); }
+  .proc-empty { font-size: 12px; color: var(--green); }
+  .proc-list { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .proc-list .pt { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .fallback-note { font-size: 11px; color: var(--muted); background: var(--card2); border-radius: 6px; padding: 6px 8px; margin-top: 10px; }
+  .chart-box { height: 160px; position: relative; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  .alert-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; background: var(--card2); border-radius: 8px; font-size: 12px; margin-bottom: 6px; }
+  .alert-item .lv { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .lv.warn { background: var(--yellow); } .lv.crit { background: var(--red); } .lv.ok { background: var(--green); }
+  .alert-item .t { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .alert-item .val { color: var(--muted); font-size: 11px; }
+  .foot { text-align: center; color: var(--muted); font-size: 11px; margin: 18px 0 6px; line-height: 1.7; }
+  .stale { color: var(--orange); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1><span id="statusDot" class="dot ok"></span> 服务器监控</h1>
+    <span id="statusBadge" class="badge ok">正常</span>
+    <div class="meta">
+      <div><b id="hostname">-</b></div>
+      <div>数据更新于 <b id="updateTime">-</b></div>
+    </div>
+  </div>
+  <div id="alertBanner"></div>
+  <div class="grid gpu-grid" id="gpuGrid"></div>
+  <div style="height:14px"></div>
+  <div class="grid sys-grid">
+    <div class="card"><h3>CPU</h3>
+      <div class="metric"><div class="label"><span>总使用率</span><b id="cpuPct">-</b></div>
+      <div class="bar"><span id="cpuBar" style="width:0%"></span></div></div>
+      <div class="statline"><div>负载 (1/5/15)</div><div><b id="cpuLoad">-</b></div>
+      <div>核心数</div><div><b id="cpuCores">-</b></div></div>
+    </div>
+    <div class="card"><h3>内存</h3>
+      <div class="metric"><div class="label"><span>物理内存</span><b id="memPct">-</b></div>
+      <div class="bar"><span id="memBar" style="width:0%"></span></div></div>
+      <div class="statline"><div>已用 / 总量</div><div><b id="memUsed">-</b></div>
+      <div>可用</div><div><b id="memAvail">-</b></div></div>
+    </div>
+    <div class="card"><h3>磁盘</h3><div id="disks"></div></div>
+    <div class="card"><h3>历史趋势（最近约 1 小时）</h3>
+      <div class="chart-box"><canvas id="chartCpu"></canvas></div>
+      <div class="legend" id="cpuLegend"></div>
+      <div class="chart-box" style="margin-top:10px"><canvas id="chartGpu"></canvas></div>
+      <div class="legend" id="gpuLegend"></div>
+    </div>
+  </div>
+  <div style="height:14px"></div>
+  <div class="card">
+    <h3>预警记录</h3>
+    <div id="alertLog" style="color:var(--muted);font-size:13px">暂无预警</div>
+  </div>
+  <div class="foot">
+    本页为<strong>永久地址</strong>，数据由服务器每约 2 分钟自动推送更新（GitHub Pages 缓存可能再延迟几分钟）。<br>
+    实时刷新版请用服务器监控系统首页。 | 页面最后生成：2026-08-16
+  </div>
+
+<script>
+const COLORS = ["#3b82f6","#06b6d4","#22c55e","#eab308","#f97316","#ef4444","#a855f7","#14b8a6","#ec4899","#84cc16"];
+function colorByVal(v, warn=80, crit=90){
+  if (v >= crit) return "var(--red)";
+  if (v >= warn) return "var(--orange)";
+  if (v >= warn-20) return "var(--yellow)";
+  return "var(--green)";
+}
+function fmtBytes(n){
+  if (n == null) return "-";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (n >= 1024 && i < u.length-1){ n/=1024; i++; }
+  return n.toFixed(i?1:0) + " " + u[i];
+}
+function esc(s){ return String(s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function drawChart(canvas, series, labels, yMax, colors){
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w*dpr; canvas.height = h*dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr); ctx.clearRect(0,0,w,h);
+  if (!series.length) return;
+  const n = series[0].length;
+  const pad = 4;
+  const maxX = Math.max(n-1, 1);
+  const px = i => pad + i/maxX*(w-2*pad);
+  const py = v => h - pad - (v/yMax)*(h-2*pad);
+  ctx.strokeStyle = "#1a2236"; ctx.fillStyle = "#8b97ad"; ctx.font = "10px sans-serif";
+  for (const g of [0, 0.5, 1]){
+    ctx.beginPath(); ctx.moveTo(pad, py(g*yMax)); ctx.lineTo(w-pad, py(g*yMax));
+    ctx.stroke();
+  }
+  ctx.textAlign = "left"; ctx.fillText(yMax, 2, 10);
+  series.forEach((data, si) => {
+    ctx.strokeStyle = colors[si % colors.length];
+    ctx.lineWidth = 1.5; ctx.beginPath();
+    data.forEach((v, i) => {
+      if (v == null) return;
+      const x = px(i), y = py(Math.min(v, yMax));
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+function renderGpus(gpus){
+  const grid = document.getElementById("gpuGrid");
+  grid.innerHTML = "";
+  gpus.forEach(g => {
+    const procs = g.procs || [];
+    const busy = procs.length > 0;
+    const badge = busy ? `<span class="occ-badge busy">${procs.length} 个进程</span>` : '<span class="occ-badge idle">空闲</span>';
+    let procHtml = '<div class="proc-list"><div class="pt">进程占用</div>';
+    if (!busy) procHtml += '<div class="proc-empty">空闲 · 无进程占用</div>';
+    else procs.forEach(p => {
+      const tag = p.type === "compute" ? '<span class="ptag compute">计算</span>' : p.type === "display" ? '<span class="ptag display">显示</span>' : '';
+      const mem = (p.mem && p.mem > 0) ? `<span class="pm">${fmtBytes(p.mem)}</span>` : '';
+      procHtml += `<div class="proc-item"><span class="pn">${esc(p.name || ("PID "+p.pid))}</span><span class="pid">${p.pid}</span>${tag}${mem}</div>`;
+    });
+    procHtml += '</div>';
+    if (g.fallback) {
+      grid.insertAdjacentHTML("beforeend", `<div class="card">
+        <div class="gpu-name">${esc(g.name || ("GPU "+g.index))}${badge}</div>
+        <div class="gpu-sub">${esc(g.bus || "插槽 #"+g.index)}</div>${procHtml}
+        <div class="fallback-note">驱动未加载，利用率/温度/显存暂不可读</div></div>`);
+      return;
+    }
+    const memPct = g.mem_total ? (g.mem_used/g.mem_total*100) : 0;
+    const tC = colorByVal(g.temp ?? 0, 80, 90), uC = colorByVal(g.util ?? 0, 80, 90);
+    grid.insertAdjacentHTML("beforeend", `<div class="card">
+      <div class="gpu-name">${esc(g.name || ("GPU "+g.index))}${badge}</div>
+      <div class="gpu-sub">${g.uuid ? esc(g.uuid.slice(0,8)) : ""} · 插槽 #${g.index}</div>
+      <div class="bigrow">
+        <div><span class="temp" style="color:${tC}">${g.temp ?? "-"}</span><span class="temp unit">°C</span></div>
+        <div><span class="util" style="color:${uC}">${g.util ?? "-"}%</span><span class="temp unit"> 利用率</span></div>
+      </div>
+      <div class="metric"><div class="label"><span>GPU 利用率</span><b>${g.util ?? "-"}%</b></div>
+        <div class="bar"><span style="width:${g.util??0}%;background:${uC}"></span></div></div>
+      <div class="metric"><div class="label"><span>显存</span><b>${fmtBytes(g.mem_used)} / ${fmtBytes(g.mem_total)} (${memPct.toFixed(0)}%)</b></div>
+        <div class="bar"><span style="width:${memPct}%;background:${colorByVal(memPct,85,95)}"></span></div></div>
+      <div class="statline"><div>功耗</div><div><b>${g.power ?? "-"} W</b></div>
+        <div>功率上限</div><div><b>${g.power_limit ?? "-"} W</b></div>
+        <div>风扇</div><div><b>${g.fan ?? "-"}%</b></div>
+        <div>性能状态</div><div><b>P${g.pstate ?? "-"}</b></div></div>
+      ${procHtml}</div>`);
+  });
+}
+
+function render(m){
+  document.getElementById("hostname").textContent = m.hostname || "-";
+  document.getElementById("updateTime").textContent = new Date(m.ts*1000).toLocaleString();
+  const stale = (Date.now()/1000 - m.ts) > 600;
+  if (stale) document.getElementById("updateTime").innerHTML = '<span class="stale">' + new Date(m.ts*1000).toLocaleString() + '（数据可能过时）</span>';
+
+  const alerts = m.alerts || [];
+  const level = alerts.length ? (alerts.some(a=>a.level==="crit") ? "crit" : "warn") : "ok";
+  document.getElementById("statusDot").className = "dot " + level;
+  const badge = document.getElementById("statusBadge");
+  badge.className = "badge " + level;
+  badge.textContent = level === "ok" ? "正常" : (level === "crit" ? "危险" : "警告");
+  const banner = document.getElementById("alertBanner");
+  if (level !== "ok"){ banner.className = level; banner.textContent = "⚠ 预警：" + alerts.map(a=>`${a.label} ${a.extra||a.value||""}`).join("；"); }
+  else { banner.className = ""; banner.textContent = ""; }
+
+  document.getElementById("cpuPct").textContent = (m.cpu.percent||0).toFixed(0) + "%";
+  document.getElementById("cpuBar").style.width = (m.cpu.percent||0) + "%";
+  document.getElementById("cpuBar").style.background = colorByVal(m.cpu.percent, 90, 97);
+  document.getElementById("cpuLoad").textContent = m.cpu.load["1"].toFixed(2)+" / "+m.cpu.load["5"].toFixed(2)+" / "+m.cpu.load["15"].toFixed(2);
+  document.getElementById("cpuCores").textContent = m.cpu.cores;
+  document.getElementById("memPct").textContent = (m.mem.percent||0).toFixed(0) + "%";
+  document.getElementById("memBar").style.width = (m.mem.percent||0) + "%";
+  document.getElementById("memBar").style.background = colorByVal(m.mem.percent, 90, 97);
+  document.getElementById("memUsed").textContent = fmtBytes(m.mem.used) + " / " + fmtBytes(m.mem.total);
+  document.getElementById("memAvail").textContent = fmtBytes(m.mem.available);
+
+  const diskBox = document.getElementById("disks");
+  diskBox.innerHTML = "";
+  (m.disks||[]).forEach(d => {
+    diskBox.insertAdjacentHTML("beforeend", `<div class="metric">
+      <div class="label"><span>${esc(d.mount)}</span><b>${fmtBytes(d.used)} / ${fmtBytes(d.total)}</b></div>
+      <div class="bar"><span style="width:${d.percent}%;background:${colorByVal(d.percent,85,95)}"></span></div></div>`);
+  });
+  if (!(m.disks||[]).length) diskBox.innerHTML = '<div style="color:var(--muted);font-size:12px">无磁盘数据</div>';
+
+  renderGpus(m.gpus || []);
+
+  const hist = m.history || [];
+  const cpu = [], mem = [], gpuU = [], gpuT = [];
+  const gpus = m.gpus || [];
+  for (let gi = 0; gi < gpus.length; gi++){ gpuU.push([]); gpuT.push([]); }
+  hist.forEach(h => {
+    cpu.push(h.cpu); mem.push(h.mem);
+    (h.gpu||[]).forEach((g, gi) => {
+      if (gpuU[gi]) gpuU[gi].push(g.util);
+      if (gpuT[gi]) gpuT[gi].push(g.temp);
+    });
+  });
+  const times = hist.map(h => new Date(h.ts*1000).toLocaleTimeString());
+  drawChart(document.getElementById("chartCpu"), [cpu, mem], times, 100, ["#3b82f6","#22c55e"]);
+  document.getElementById("cpuLegend").innerHTML = '<span style="color:#3b82f6">CPU %</span><span style="color:#22c55e">内存 %</span>';
+  const gSeries = [], gColors = [];
+  gpus.forEach((g, gi) => { gSeries.push(gpuU[gi]||[]); gColors.push(COLORS[gi%COLORS.length]); });
+  const g2 = [];
+  gpus.forEach((g, gi) => { g2.push(gpuT[gi]||[]); });
+  g2.forEach((s, si) => { gSeries.push(s); gColors.push(COLORS[si%COLORS.length]); });
+  drawChart(document.getElementById("chartGpu"), gSeries, times, 110, gColors);
+  const lg = document.getElementById("gpuLegend");
+  lg.innerHTML = gpus.map((g,gi)=>`<span style="color:${COLORS[gi%COLORS.length]}">GPU${gi} 利用率</span>`).join("") +
+    gpus.map((g,gi)=>`<span style="color:${COLORS[gi%COLORS.length]}">GPU${gi} 温度</span>`).join("");
+
+  const logBox = document.getElementById("alertLog");
+  if (!(m.alert_log||[]).length){ logBox.innerHTML = '<div style="color:var(--muted);font-size:13px">暂无预警</div>'; }
+  else {
+    logBox.innerHTML = "";
+    m.alert_log.slice(0,30).forEach(a => {
+      const lv = a.event === "resolved" ? "ok" : a.level;
+      logBox.insertAdjacentHTML("beforeend", `<div class="alert-item"><span class="lv ${lv}"></span>
+        <div><b>${esc(a.label)}</b> ${a.event==="resolved"?"已恢复":(a.level==="crit"?"危险":"警告")}
+        <div class="val">${esc(typeof a.value==="string"?a.value:(a.extra||""))}</div></div>
+        <span class="t">${new Date(a.time*1000).toLocaleTimeString()}</span></div>`);
+    });
+  }
+}
+
+async function load(){
+  try {
+    const r = await fetch("metrics.json?t=" + Date.now());
+    if (!r.ok) throw new Error(r.status);
+    render(await r.json());
+  } catch(e){
+    const grid = document.getElementById("gpuGrid");
+    grid.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted)">等待服务器数据推送…（首次发布后需等待数分钟）</div>';
+  }
+}
+load();
+setInterval(load, 20000);
+</script>
+</body>
+</html>
