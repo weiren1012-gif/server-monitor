@@ -110,6 +110,21 @@
     <h3>预警记录</h3>
     <div id="alertLog" style="color:var(--muted);font-size:13px">暂无预警</div>
   </div>
+  <div style="height:14px"></div>
+  <div class="card">
+    <h3>历史占用记录（最近 24 小时）</h3>
+    <div class="occ-legend">
+      <span>占用率色标：</span>
+      <span><i class="c0"></i>空闲</span>
+      <span><i class="c1"></i>&lt;30%</span>
+      <span><i class="c2"></i>30-60%</span>
+      <span><i class="c3"></i>60-90%</span>
+      <span><i class="c4"></i>&gt;90%</span>
+      <span><i class="c5"></i>仅进程占用</span>
+    </div>
+    <div class="chart-box" style="height:130px"><canvas id="chartOcc"></canvas></div>
+    <div id="occSessions"></div>
+  </div>
   <div class="foot">
     本页为<strong>永久地址</strong>，数据由服务器每约 2 分钟自动推送更新（GitHub Pages 缓存可能再延迟几分钟）。<br>
     实时刷新版请用服务器监控系统首页。 | 页面最后生成：2026-08-16
