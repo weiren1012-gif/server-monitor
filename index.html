@@ -70,6 +70,19 @@
   .alert-item .val { color: var(--muted); font-size: 11px; }
   .foot { text-align: center; color: var(--muted); font-size: 11px; margin: 18px 0 6px; line-height: 1.7; }
   .stale { color: var(--orange); font-weight: 600; }
+  .occ-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin-bottom: 8px; align-items: center; }
+  .occ-legend i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+  .occ-legend .c0 { background: #0d1526; border: 1px solid #25304a; }
+  .occ-legend .c1 { background: #22c55e; }
+  .occ-legend .c2 { background: #eab308; }
+  .occ-legend .c3 { background: #f97316; }
+  .occ-legend .c4 { background: #ef4444; }
+  .occ-legend .c5 { background: #06b6d4; }
+  .ses-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; background: var(--card2); border-radius: 8px; font-size: 12px; margin-bottom: 6px; border-left: 3px solid var(--blue); }
+  .ses-item .sg { font-weight: 700; color: var(--cyan); min-width: 44px; }
+  .ses-item .st { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ses-item .sp { flex: 1; }
+  .ses-item .sip { color: var(--muted); font-family: monospace; }
 </style>
 </head>
 <body>
@@ -188,7 +201,7 @@ function renderGpus(gpus){
     else procs.forEach(p => {
       const tag = p.type === "compute" ? '<span class="ptag compute">计算</span>' : p.type === "display" ? '<span class="ptag display">显示</span>' : '';
       const mem = (p.mem && p.mem > 0) ? `<span class="pm">${fmtBytes(p.mem)}</span>` : '';
-      procHtml += `<div class="proc-item"><span class="pn">${esc(p.name || ("PID "+p.pid))}</span><span class="pid">${p.pid}</span>${tag}${mem}</div>`;
+      procHtml += `<div class="proc-item"><span class="pn">${esc(p.name || ("PID "+p.pid))}</span><span class="pid">${p.pid}</span>${tag}${mem}${(p.ips&&p.ips.length)?`<span class="pm">IP:${p.ips.join(",")}</span>`:""}</div>`;
     });
     procHtml += '</div>';
     if (g.fallback) {
@@ -293,6 +306,87 @@ function render(m){
         <span class="t">${new Date(a.time*1000).toLocaleTimeString()}</span></div>`);
     });
   }
+
+  renderOcc(m.gpu_history);
+}
+
+function occColor(util, occ){
+  if (!occ) return "#0d1526";
+  if (util == null) return "#06b6d4";
+  if (util >= 90) return "#ef4444";
+  if (util >= 60) return "#f97316";
+  if (util >= 30) return "#eab308";
+  return "#22c55e";
+}
+
+function renderOcc(d){
+  const canvas = document.getElementById("chartOcc");
+  if (!canvas || !d || !d.series) return;
+  const series = d.series || [];
+  const gpuCount = Math.max(1, ...(series.map(s => Math.max(0, ...Object.keys(s.gpus||{}).map(Number))))) + 1;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w*dpr; canvas.height = h*dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr); ctx.clearRect(0,0,w,h);
+  if (!series.length){
+    ctx.fillStyle = "#8b97ad"; ctx.font = "12px sans-serif";
+    ctx.fillText("暂无历史数据（记录从本系统启用后开始）", 10, h/2);
+    document.getElementById("occSessions").innerHTML = '<div style="color:var(--muted);font-size:13px">暂无记录</div>';
+    return;
+  }
+  const n = series.length;
+  const labelW = 42;
+  const cw = (w - labelW) / n;
+  const rh = (h - 16) / gpuCount;
+  series.forEach((s, i) => {
+    const x = labelW + i*cw;
+    for (let gi = 0; gi < gpuCount; gi++){
+      const gd = (s.gpus||{})[gi];
+      if (!gd || !gd.occ) continue;
+      ctx.fillStyle = occColor(gd.util, true);
+      ctx.fillRect(x, gi*rh, Math.max(1, cw), rh);
+    }
+  });
+  ctx.fillStyle = "#8b97ad"; ctx.font = "10px sans-serif";
+  for (let gi = 0; gi < gpuCount; gi++) ctx.fillText("GPU"+gi, 2, gi*rh + rh*0.65);
+  const now = d.generated*1000;
+  const span = d.hours*3600*1000;
+  ctx.textAlign = "center";
+  for (let t = 0; t < d.hours; t += 3){
+    const ts = now - span + t*3600*1000;
+    const x = labelW + (t/d.hours)*(w-labelW);
+    ctx.fillStyle = "#8b97ad";
+    ctx.fillText(new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}), x, h-4);
+    ctx.strokeStyle = "#1a2236";
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h-16); ctx.stroke();
+  }
+  ctx.textAlign = "left";
+
+  const box = document.getElementById("occSessions");
+  if (!d.sessions || !d.sessions.length){
+    box.innerHTML = '<div style="color:var(--muted);font-size:13px">近 24 小时无占用记录</div>';
+    return;
+  }
+  box.innerHTML = "";
+  const fmt = ts => new Date(ts*1000).toLocaleString([], {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  d.sessions.slice().sort((a,b)=>b.start-a.start).forEach(s => {
+    const procs = (s.procs||[]).map(p => {
+      const ip = (p.ips||[]).length ? ` <span class="sip">IP:${p.ips.join(",")}</span>` : "";
+      return `<span>${esc(p.name||("PID "+p.pid))} (${esc((p.cmd||"").slice(0,40)||("PID "+p.pid))})${ip}</span>`;
+    }).join("<br>");
+    box.insertAdjacentHTML("beforeend", `<div class="ses-item">
+      <span class="sg">GPU${s.gpu}</span>
+      <span class="st">${fmt(s.start)} → ${fmt(s.end)}<br>${fmtDuration(s.end-s.start)}</span>
+      <div class="sp"><b>${s.util_avg != null ? "平均利用率 "+s.util_avg+"%" : "被进程占用"}</b>${s.temp_max != null ? " · 最高温度 "+s.temp_max+"°C" : ""}<br>${procs}</div>
+    </div>`);
+  });
+}
+
+function fmtDuration(sec){
+  sec = Math.round(sec);
+  const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60);
+  return (h ? h+"小时" : "") + (m ? m+"分" : (h? "": (sec+"秒")));
 }
 
 async function load(){
