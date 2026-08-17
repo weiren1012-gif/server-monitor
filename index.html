@@ -167,7 +167,7 @@
   </div>
 
 <script>
-const COLORS = ["#3b82f6","#06b6d4","#22c55e","#eab308","#f97316","#ef4444","#a855f7","#14b8a6","#ec4899","#84cc16"];
+const COLORS = ["#60a5fa","#22d3ee","#34d399","#fbbf24","#fb923c","#f87171","#a78bfa","#14b8a6","#ec4899","#84cc16"];
 function colorByVal(v, warn=80, crit=90){
   if (v >= crit) return "var(--red)";
   if (v >= warn) return "var(--orange)";
@@ -194,21 +194,31 @@ function drawChart(canvas, series, labels, yMax, colors){
   const maxX = Math.max(n-1, 1);
   const px = i => pad + i/maxX*(w-2*pad);
   const py = v => h - pad - (v/yMax)*(h-2*pad);
-  ctx.strokeStyle = "#1a2236"; ctx.fillStyle = "#8b97ad"; ctx.font = "10px sans-serif";
+  ctx.strokeStyle = "rgba(148,163,205,.12)"; ctx.fillStyle = "#93a0bd"; ctx.font = "10px sans-serif";
   for (const g of [0, 0.5, 1]){
     ctx.beginPath(); ctx.moveTo(pad, py(g*yMax)); ctx.lineTo(w-pad, py(g*yMax));
     ctx.stroke();
   }
   ctx.textAlign = "left"; ctx.fillText(yMax, 2, 10);
   series.forEach((data, si) => {
-    ctx.strokeStyle = colors[si % colors.length];
-    ctx.lineWidth = 1.5; ctx.beginPath();
+    const color = colors[si % colors.length];
+    ctx.beginPath();
     data.forEach((v, i) => {
       if (v == null) return;
       const x = px(i), y = py(Math.min(v, yMax));
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
     ctx.stroke();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, color + "26");
+    grad.addColorStop(1, color + "00");
+    ctx.lineTo(px(n-1), h-pad);
+    ctx.lineTo(px(0), h-pad);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
   });
 }
 
@@ -340,8 +350,8 @@ function render(m){
     });
   });
   const times = hist.map(h => new Date(h.ts*1000).toLocaleTimeString());
-  drawChart(document.getElementById("chartCpu"), [cpu, mem], times, 100, ["#3b82f6","#22c55e"]);
-  document.getElementById("cpuLegend").innerHTML = '<span style="color:#3b82f6">CPU %</span><span style="color:#22c55e">内存 %</span>';
+  drawChart(document.getElementById("chartCpu"), [cpu, mem], times, 100, ["#60a5fa","#34d399"]);
+  document.getElementById("cpuLegend").innerHTML = '<span style="color:#60a5fa">CPU %</span><span style="color:#34d399">内存 %</span>';
   const gSeries = [], gColors = [];
   gpus.forEach((g, gi) => { gSeries.push(gpuU[gi]||[]); gColors.push(COLORS[gi%COLORS.length]); });
   const g2 = [];
@@ -374,7 +384,7 @@ function occColor(util, occ){
   if (util >= 90) return "#ef4444";
   if (util >= 60) return "#f97316";
   if (util >= 30) return "#eab308";
-  return "#22c55e";
+  return "#34d399";
 }
 
 function renderOcc(d){
@@ -388,7 +398,7 @@ function renderOcc(d){
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr); ctx.clearRect(0,0,w,h);
   if (!series.length){
-    ctx.fillStyle = "#8b97ad"; ctx.font = "12px sans-serif";
+    ctx.fillStyle = "#93a0bd"; ctx.font = "12px sans-serif";
     ctx.fillText("暂无历史数据（记录从本系统启用后开始）", 10, h/2);
     document.getElementById("occSessions").innerHTML = '<div style="color:var(--muted);font-size:13px">暂无记录</div>';
     return;
@@ -406,7 +416,7 @@ function renderOcc(d){
       ctx.fillRect(x, gi*rh, Math.max(1, cw), rh);
     }
   });
-  ctx.fillStyle = "#8b97ad"; ctx.font = "10px sans-serif";
+  ctx.fillStyle = "#93a0bd"; ctx.font = "10px sans-serif";
   for (let gi = 0; gi < gpuCount; gi++) ctx.fillText("GPU"+gi, 2, gi*rh + rh*0.65);
   const now = d.generated*1000;
   const span = d.hours*3600*1000;
@@ -414,9 +424,9 @@ function renderOcc(d){
   for (let t = 0; t < d.hours; t += 3){
     const ts = now - span + t*3600*1000;
     const x = labelW + (t/d.hours)*(w-labelW);
-    ctx.fillStyle = "#8b97ad";
+    ctx.fillStyle = "#93a0bd";
     ctx.fillText(new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}), x, h-4);
-    ctx.strokeStyle = "#1a2236";
+    ctx.strokeStyle = "rgba(148,163,205,.12)";
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h-16); ctx.stroke();
   }
   ctx.textAlign = "left";
